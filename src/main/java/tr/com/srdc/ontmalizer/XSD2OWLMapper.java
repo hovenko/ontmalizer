@@ -96,7 +96,7 @@ public class XSD2OWLMapper {
 			schemaSet = parser.getResult();
 			schema = schemaSet.getSchema(1);
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new RuntimeException("Failed to parse XSD file: " + file, e);
 		}
 	}
 	
