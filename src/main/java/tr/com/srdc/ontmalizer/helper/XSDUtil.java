@@ -4,16 +4,27 @@
 package tr.com.srdc.ontmalizer.helper;
 
 import com.hp.hpl.jena.datatypes.xsd.XSDDatatype;
+import com.hp.hpl.jena.datatypes.xsd.impl.XSDBaseStringType;
+import com.hp.hpl.jena.datatypes.xsd.impl.XSDPlainType;
 import com.hp.hpl.jena.rdf.model.Resource;
+import com.hp.hpl.jena.rdf.model.ResourceFactory;
 import com.hp.hpl.jena.vocabulary.XSD;
 
 /**
  * @author Mustafa
- *
+ * 
  */
 public class XSDUtil {
-	
+
 	public static Resource getXSDResource(String type) {
+		Resource found = findXSDResource(type);
+		if (found == null) {
+			throw new IllegalStateException("Unable to find type: " + type);
+		}
+		return found;
+	}
+
+	private static Resource findXSDResource(String type) {
 		if (type.equals("anyURI"))
 			return XSD.anyURI;
 		else if (type.equals("base64Binary"))
@@ -46,69 +57,73 @@ public class XSDUtil {
 			return XSD.ID;
 		else if (type.equals("IDREF"))
 			return XSD.IDREF;
-//		else if (type.equals("IDREFS"))
-//			return XSD.IDREFS;
+		else if (type.equals("IDREFS"))
+			return IDREFS;
 		else if (type.equals("integer"))
 			return XSD.integer;
 		else if (type.equals("language"))
 			return XSD.language;
 		else if (type.equals("Name"))
-			return XSD.Name;		
+			return XSD.Name;
 		else if (type.equals("NCName"))
 			return XSD.NCName;
 		else if (type.equals("negativeInteger"))
 			return XSD.negativeInteger;
 		else if (type.equals("NMTOKEN"))
-			return XSD.NMTOKEN;		
-//		else if (type.equals("NMTOKENS"))
-//			return XSD.NMTOKENS;
+			return XSD.NMTOKEN;
+		// else if (type.equals("NMTOKENS"))
+		// return XSD.NMTOKENS;
 		else if (type.equals("nonNegativeInteger"))
 			return XSD.nonNegativeInteger;
 		else if (type.equals("nonPositiveInteger"))
-			return XSD.nonPositiveInteger;		
+			return XSD.nonPositiveInteger;
 		else if (type.equals("normalizedString"))
 			return XSD.normalizedString;
 		else if (type.equals("NOTATION"))
 			return XSD.NOTATION;
 		else if (type.equals("positiveInteger"))
-			return XSD.positiveInteger;		
+			return XSD.positiveInteger;
 		else if (type.equals("QName"))
 			return XSD.QName;
 		else if (type.equals("time"))
 			return XSD.time;
 		else if (type.equals("token"))
-			return XSD.token;		
+			return XSD.token;
 		else if (type.equals("unsignedByte"))
 			return XSD.unsignedByte;
 		else if (type.equals("unsignedInt"))
 			return XSD.unsignedInt;
 		else if (type.equals("unsignedLong"))
-			return XSD.unsignedLong;		
+			return XSD.unsignedLong;
 		else if (type.equals("unsignedShort"))
 			return XSD.unsignedShort;
 		else if (type.equals("boolean"))
 			return XSD.xboolean;
 		else if (type.equals("byte"))
-			return XSD.xbyte;		
+			return XSD.xbyte;
 		else if (type.equals("double"))
 			return XSD.xdouble;
 		else if (type.equals("float"))
-			return XSD.xfloat;		
+			return XSD.xfloat;
 		else if (type.equals("int"))
 			return XSD.xint;
 		else if (type.equals("long"))
-			return XSD.xlong;		
+			return XSD.xlong;
 		else if (type.equals("short"))
-			return XSD.xshort;	
+			return XSD.xshort;
 		else if (type.equals("string"))
-			return XSD.xstring;		
-		
-		return null;
+			return XSD.xstring;
+		else if (type.equals("anySimpleType"))
+			return ANY_SIMPLE_TYPE;
+		throw new IllegalArgumentException("Unmapped XSD type: " + type);
 	}
-	
-	
+
+	static Resource ANY_SIMPLE_TYPE = ResourceFactory.createResource(new XSDBaseStringType("anySimpleType",
+			String.class).getURI());
+	static Resource IDREFS = ResourceFactory.createResource(new XSDPlainType("IDREFS").getURI());
+
 	public static XSDDatatype getXSDDatatype(String name) {
-		if (name.equals("anyURI")) 
+		if (name.equals("anyURI"))
 			return XSDDatatype.XSDanyURI;
 		else if (name.equals("base64Binary"))
 			return XSDDatatype.XSDbase64Binary;
@@ -175,7 +190,7 @@ public class XSDUtil {
 		else if (name.equals("QName"))
 			return XSDDatatype.XSDQName;
 		else if (name.equals("short"))
-			return XSDDatatype.XSDshort;	
+			return XSDDatatype.XSDshort;
 		else if (name.equals("string"))
 			return XSDDatatype.XSDstring;
 		else if (name.equals("time"))

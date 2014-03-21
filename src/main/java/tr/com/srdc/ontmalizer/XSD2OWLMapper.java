@@ -5,8 +5,13 @@ import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
 
+import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
+import org.apache.commons.lang3.builder.ToStringStyle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -78,6 +83,8 @@ public class XSD2OWLMapper {
 
 	private String mainURI = null;
 
+	private Map<String, String> reservedElementTypeClasses = new HashMap<>();
+
 	/**
 	 * Creates a new XSD2OWLMapper instance.
 	 * 
@@ -136,7 +143,7 @@ public class XSD2OWLMapper {
 			try {
 				convertComplexType(xsComplexType, null);
 			} catch (RuntimeException e) {
-				LOGGER.error("Failed to convert complex type: " + toString(xsComplexType), e);
+				LOGGER.error("Failed to convert complex type: " + toS(xsComplexType), e);
 			}
 		}
 
@@ -351,24 +358,27 @@ public class XSD2OWLMapper {
 
 				return complexClass;
 			}
-		} else if (complex.isLocal())
+		} else if (complex.isLocal()) {
 			complexClass = ontology.createClass(parentURI);
+		}
 
 		XSType baseType = complex.getBaseType();
 		String baseURI = getURI(baseType);
 
 		if (baseType.isSimpleType()) {
-			if (ontology.getOntResource(baseURI) != null && !baseType.getTargetNamespace().equals(XSDDatatype.XSD))
+			if (ontology.getOntResource(baseURI) != null && !baseType.getTargetNamespace().equals(XSDDatatype.XSD)) {
 				// If base type is an enumeration simple type
 				complexClass.addSuperClass(ontology.getOntResource(baseURI));
-			else {
-				if (baseType.getTargetNamespace().equals(XSDDatatype.XSD))
+			} else {
+				if (baseType.getTargetNamespace().equals(XSDDatatype.XSD)) {
 					complexClass.addSuperClass(ontology.createAllValuesFromRestriction(null, hasValue,
 							XSDUtil.getXSDResource(baseType.getName())));
+				}
 
-				else if (ontology.getOntResource(baseURI + Constants.DATATYPE_SUFFIX) != null)
+				else if (ontology.getOntResource(baseURI + Constants.DATATYPE_SUFFIX) != null) {
 					complexClass.addSuperClass(ontology.createAllValuesFromRestriction(null, hasValue,
 							ontology.getOntResource(baseURI + Constants.DATATYPE_SUFFIX)));
+				}
 				complexClass.addSuperClass(ontology.createMaxCardinalityRestriction(null, hasValue, 1));
 			}
 
@@ -408,16 +418,16 @@ public class XSD2OWLMapper {
 				if (particle != null) {
 					XSTerm term = particle.getTerm();
 					try {
-						if (term.isModelGroup())
+						if (term.isModelGroup()) {
 							convertGroup(term.asModelGroup(), complexClass);
-						else if (term.isModelGroupDecl()) {
+						} else if (term.isModelGroupDecl()) {
 							XSModelGroupDecl group = term.asModelGroupDecl();
 							OntClass groupClass = ontology.createClass(getURI(group));
 
 							groupClass.addSubClass(complexClass);
 						}
 					} catch (RuntimeException e) {
-						throw new RuntimeException("Failed model term: " + term, e);
+						throw new RuntimeException("Failed model particle term: " + toS(term), e);
 					}
 				}
 			} else
@@ -434,8 +444,8 @@ public class XSD2OWLMapper {
 				try {
 					convertAttribute(attributeUse, complexClass);
 				} catch (RuntimeException e) {
-					throw new RuntimeException("Failed to convert attribute: " + toString(attributeUse)
-							+ ", complexClass: " + complexClass, e);
+					throw new RuntimeException("Failed to convert attribute: " + toS(attributeUse) + ", complexClass: "
+							+ toS(complexClass), e);
 				}
 			}
 		}
@@ -479,13 +489,14 @@ public class XSD2OWLMapper {
 		String attributeName = attribute.getName();
 
 		XSSimpleType attributeType = attribute.getType();
-		String NS = attributeType.getTargetNamespace();
+		final String NS = attributeType.getTargetNamespace();
 
 		final String URI;
-		if (attributeType.isGlobal())
+		if (attributeType.isGlobal()) {
 			URI = getURI(attributeType);
-		else
+		} else {
 			URI = mainURI + "#Class_" + attrLocalSimpleTypeCount + "_" + attributeName;
+		}
 
 		/**
 		 * xsd:IDREFS, xsd:ENTITIES and xsd:NMTOKENS are sequence-valued
@@ -521,7 +532,7 @@ public class XSD2OWLMapper {
 				ontology.createAllValuesFromRestriction(null, prop, xsdResourceClass).addSubClass(complexClass);
 			} catch (RuntimeException e) {
 				throw new RuntimeException("Failed ontology.createAllValuesFromRestriction(null, " + prop + ", "
-						+ xsdResourceClass + ")", e);
+						+ xsdResourceClass + ") :" + toS(attributeType), e);
 			}
 		} else if (ontology.getOntResource(URI + Constants.DATATYPE_SUFFIX) != null)
 			ontology.createAllValuesFromRestriction(null, prop,
@@ -533,57 +544,81 @@ public class XSD2OWLMapper {
 	private void convertGroup(XSModelGroup group, OntClass parent) {
 		XSParticle[] particles = group.getChildren();
 		for (XSParticle p : particles) {
+			try {
+				convertGroupParticle(parent, p);
+			} catch (RuntimeException e) {
+				throw new RuntimeException("Failed to convert group particle: " + toS(p), e);
+			}
+		}
+	}
+
+	private void convertGroupParticle(OntClass parent, XSParticle p) {
+		{
 			XSTerm term = p.getTerm();
 			if (term.isElementDecl()) {
 				XSElementDecl element = term.asElementDecl();
 				Property prop = null;
 				final String elementName = element.getName();
-				if (element.getType().isSimpleType()) {
+				final XSType xsType = element.getType();
+				final String typeNamespace = xsType.getTargetNamespace();
+
+				if (xsType.isSimpleType()) {
+					String typeName = xsType.getName();
+					if (typeName == null) {
+						throw new IllegalStateException("Missing name of type:" + toS(xsType) + "   of element:"
+								+ toS(element));
+					}
 
 					prop = ontology.createDatatypeProperty(mainURI + "#"
 							+ NamingUtil.createPropertyName(dtpprefix, elementName));
 
-					if (element.getType().getTargetNamespace().equals(XSDDatatype.XSD)) {
-						if (element.getType().getName().equals("anyType"))
+					if (typeNamespace.equals(XSDDatatype.XSD)) {
+						if (typeName.equals("anyType")) {
 							parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop, OWL.Thing));
-						else
-							parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop,
-									XSDUtil.getXSDResource(element.getType().getName())));
+						} else {
+							Resource xsdResource = XSDUtil.getXSDResource(typeName);
+							parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop, xsdResource));
+						}
 
 					} else {
 						parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop,
-								ontology.getResource(getURI(element.getType()) + Constants.DATATYPE_SUFFIX)));
+								ontology.getResource(getURI(xsType) + Constants.DATATYPE_SUFFIX)));
 
-						convertSimpleType(element.getType().asSimpleType(), getURI(element.getType()));
+						convertSimpleType(xsType.asSimpleType(), getURI(xsType));
 					}
 
-				} else if (element.getType().isComplexType()) {
+				} else if (xsType.isComplexType()) {
+					String typeName = xsType.getName();
+
 					prop = ontology.createObjectProperty(mainURI + "#"
 							+ NamingUtil.createPropertyName(opprefix, elementName));
 
 					// TODO: Mustafa: How will this be possible?
-					if (element.getType().getTargetNamespace().equals(XSDDatatype.XSD)) {
-						if (element.getType().getName().equals("anyType"))
+					if (typeNamespace.equals(XSDDatatype.XSD)) {
+						if (typeName.equals("anyType")) {
 							parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop, OWL.Thing));
-						else
-							parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop,
-									XSDUtil.getXSDResource(element.getType().getName())));
+						} else {
+							final Resource xsdResource = XSDUtil.getXSDResource(typeName);
+							parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop, xsdResource));
+						}
 					} else {
-						if (element.getType().isGlobal())
+						if (xsType.isGlobal()) {
 							parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop,
-									ontology.createResource(getURI(element.getType()))));
-						else if (element.getType().isLocal()) {
-							OntClass anonClass = ontology.createClass(mainURI + "#" + "Anon_" + anonCount++ + "_" + elementName);
-							anonClass.addSuperClass(ontology.createClass(mainURI + "#" + "Anon"));
-							parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop, anonClass));
+									ontology.createResource(getURI(xsType))));
+						} else if (xsType.isLocal()) {
+							final OntClass innerClass = ontology.createClass(mainURI + "#"
+									+ reserveElementTypeClass(elementName));
+							// innerClass.addSuperClass(ontology.createClass(mainURI
+							// + "#" + "Anon"));
+							parent.addSuperClass(ontology.createAllValuesFromRestriction(null, prop, innerClass));
 
-							if (element.getType().isSimpleType())
-								convertSimpleType(element.getType().asSimpleType(), anonClass.getURI());
-							else if (element.getType().isComplexType())
-								convertComplexType(element.getType().asComplexType(), anonClass.getURI());
+							if (xsType.isSimpleType()) {
+								convertSimpleType(xsType.asSimpleType(), innerClass.getURI());
+							} else if (xsType.isComplexType()) {
+								convertComplexType(xsType.asComplexType(), innerClass.getURI());
+							}
 						}
 					}
-
 				}
 
 				// Cardinality constraints for the elements
@@ -612,6 +647,15 @@ public class XSD2OWLMapper {
 				groupClass.addSubClass(parent);
 			}
 		}
+	}
+
+	private String reserveElementTypeClass(final String elementName) {
+		String key = elementName;
+		while (reservedElementTypeClasses.containsKey(key)) {
+			key = elementName + anonCount++;
+		}
+		reservedElementTypeClasses.put(key, elementName);
+		return key;
 	}
 
 	private void convertModelGroupDecl(XSModelGroupDecl group) {
@@ -783,12 +827,7 @@ public class XSD2OWLMapper {
 		this.dtpprefix = dtpprefix;
 	}
 
-	private static String toString(XSComplexType in) {
-		return String.format("%s[%s]", in.getClass(), in.getScope());
-	}
-
-	private static String toString(XSAttributeUse attrUse) {
-		return String.format("%s[%s, %s, %s]", attrUse.getClass(), attrUse.getDecl(), attrUse.getDefaultValue(),
-				attrUse.getFixedValue());
+	private static String toS(Object in) {
+		return "\n" + ReflectionToStringBuilder.toString(in, ToStringStyle.MULTI_LINE_STYLE, true);
 	}
 }
