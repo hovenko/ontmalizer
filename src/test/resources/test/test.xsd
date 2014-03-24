@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:salus="http://www.salusproject.eu/ontology/test" targetNamespace="http://www.salusproject.eu/ontology/test" elementFormDefault="qualified" attributeFormDefault="unqualified">
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+		xmlns:salus="http://www.salusproject.eu/ontology/test"
+		targetNamespace="http://www.salusproject.eu/ontology/test"
+		elementFormDefault="qualified"
+		attributeFormDefault="unqualified">
 	<xs:element name="roott" type="salus:Roott">
 		<xs:annotation>
 			<xs:documentation>Comment describing your root element</xs:documentation>
@@ -41,6 +45,17 @@
 			<xs:element name="cmp3elem1" type="xs:float"/>
 		</xs:sequence>
 		<xs:attribute name="cmp3attr1" type="xs:string"/>
+	</xs:complexType>
+	<xs:complexType name="complextype4">
+		<xs:simpleContent>
+			<xs:extension base="xs:string">
+				<xs:attribute name="link" type="xs:anyURI">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Link to any URI representing the complex type</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
 	</xs:complexType>
 	<xs:simpleType name="simpletype1">
 		<xs:restriction base="xs:string">

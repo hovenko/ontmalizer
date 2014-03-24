@@ -1,5 +1,7 @@
 package tr.com.srdc.ontmalizer;
 
+import static tr.com.srdc.ontmalizer.helper.DebugUtil.*;
+
 import java.io.File;
 import java.io.OutputStream;
 import java.net.URI;
@@ -32,6 +34,8 @@ import com.hp.hpl.jena.datatypes.xsd.XSDDatatype;
 import com.hp.hpl.jena.ontology.AllValuesFromRestriction;
 import com.hp.hpl.jena.ontology.OntClass;
 import com.hp.hpl.jena.ontology.OntModel;
+import com.hp.hpl.jena.ontology.OntProperty;
+import com.hp.hpl.jena.ontology.Restriction;
 import com.hp.hpl.jena.rdf.model.Literal;
 import com.hp.hpl.jena.rdf.model.Model;
 import com.hp.hpl.jena.rdf.model.ModelFactory;
@@ -40,6 +44,7 @@ import com.hp.hpl.jena.rdf.model.RDFWriter;
 import com.hp.hpl.jena.rdf.model.ResIterator;
 import com.hp.hpl.jena.rdf.model.Resource;
 import com.hp.hpl.jena.util.iterator.ExtendedIterator;
+import com.hp.hpl.jena.vocabulary.XSD;
 
 /**
  * XML2OWLMapper Class converts XML instances to RDF Models with respect to an
@@ -174,73 +179,81 @@ public class XML2OWLMapper {
 		// Then, proceed with child nodes
 		NodeList children = root.getChildNodes();
 		for (int i = 0, length = children.getLength(); i < length; i++) {
-			traverseChildren(children.item(i), modelRoot, rootType);
+			Node item = children.item(i);
+			try {
+				traverseChildren(item, modelRoot, rootType);
+			} catch (RuntimeException e) {
+				throw new RuntimeException("Failed to traverse child: " + toS(item), e);
+			}
 		}
 	}
 
 	private void traverseAttributes(Node node, Resource subject, Resource subjectType) {
+		if (subject == null) {
+			return;
+		}
+
 		NamedNodeMap attributes = node.getAttributes();
 		for (int i = 0, length = attributes.getLength(); i < length; i++) {
-			TypedResource atObjType = findObjectType(subjectType, attributes.item(i).getLocalName());
+			Node attribute = attributes.item(i);
+			TypedResource atObjType = null;
+			try {
+				atObjType = findObjectType(subjectType, attribute.getLocalName());
+			} catch (RuntimeException e) {
+				// throw new
+				// RuntimeException("Failed to find object type of attribute: "
+				// + toS(attribute), e);
+				LOGGER.warn("Failed to find object type of attribute: " + toS(attribute) + " from " + toS(node), e);
+				readPlainAttribute(subject, attribute);
+			}
 
-			if (atObjType != null) {
-				Property atProp = model.createProperty(NS
-						+ NamingUtil.createPropertyName(dtpprefix, attributes.item(i).getLocalName()));
-
-				Literal value = model.createTypedLiteral(attributes.item(i).getNodeValue(), atObjType.getResource()
-						.getURI());
-				if (subject != null)
-					subject.addLiteral(atProp, value);
+			try {
+				readAttribute(subject, atObjType, attribute);
+			} catch (RuntimeException e) {
+				throw new RuntimeException("Failed to read attribute: " + toS(attribute), e);
 			}
 		}
+	}
+
+	private void readPlainAttribute(Resource subject, Node attribute) {
+		Property atProp = model.createProperty(NS + NamingUtil.createPropertyName(dtpprefix, attribute.getLocalName()));
+
+		Literal value = model.createLiteral(attribute.getNodeValue());
+
+		subject.addLiteral(atProp, value);
+	}
+
+	private void readAttribute(Resource subject, TypedResource atObjType, Node attribute) {
+		if (atObjType != null) {
+			Property atProp = model.createProperty(NS
+					+ NamingUtil.createPropertyName(dtpprefix, attribute.getLocalName()));
+
+			if (isAnyUri(atObjType)) {
+				subject.addProperty(atProp, model.getResource(attribute.getNodeValue()));
+			} else {
+				Literal value = model.createTypedLiteral(attribute.getNodeValue(), atObjType.getResource().getURI());
+				subject.addLiteral(atProp, value);
+			}
+		}
+	}
+
+	private boolean isAnyUri(TypedResource atObjType) {
+		return XSD.anyURI.getURI().equals(atObjType.getResource().getURI());
 	}
 
 	private void traverseChildren(Node node, Resource subject, Resource subjectType) {
 		if (node == null)
 			return;
 
-		TypedResource objectType = null;
-		Resource object = null;
+		final short nodeType = node.getNodeType();
 
-		if (node.getNodeType() == Node.ELEMENT_NODE) {
-			objectType = findObjectType(subjectType, node.getLocalName());
+		if (nodeType == Node.ELEMENT_NODE) {
+			Resource object = null;
+			final TypedResource objectType = findObjectType(subjectType, node);
 
 			if (objectType != null) {
-
-				/**
-				 * The type of the element might be overridden with the use of
-				 * xsi:type, if the original type of the element is abstract, or
-				 * a superclass. Therefore, we have to be sure about the actual
-				 * type.
-				 */
-				Element element = (Element) node;
-				String overriddenXsiType = element.getAttributeNS(Constants.XSI_NS, "type");
-				if (overriddenXsiType != null && !overriddenXsiType.equals("")) {
-					String overriddenNS = null;
-					String overriddenType = null;
-					if (overriddenXsiType.contains(":")) {
-						String[] strarr = overriddenXsiType.split(":");
-						String prefix = strarr[0];
-						overriddenType = strarr[1];
-						overriddenNS = document.lookupNamespaceURI(prefix) + "#";
-					} else {
-						overriddenType = overriddenXsiType;
-						overriddenNS = NS;
-					}
-					objectType = findResourceType(overriddenNS + overriddenType);
-				}
-
 				if (!objectType.isDatatype()) {
-					object = model.createResource(
-							baseURI + Constants.ONTMALIZER_INSTANCE_NAME_PREFIX + no + "_"
-									+ objectType.getResource().getLocalName() + "_"
-									+ count.get(objectType.getResource().getURI()), objectType.getResource());
-					count.put(objectType.getResource().getURI(), count.get(objectType.getResource().getURI()) + 1);
-
-					Property prop = model.createProperty(NS
-							+ NamingUtil.createPropertyName(opprefix, node.getLocalName()));
-
-					subject.addProperty(prop, object);
+					object = traverseChildrenNotDatatype(node, subject, objectType);
 				} else if (node.getFirstChild() != null && node.getFirstChild().getNodeValue() != null) {
 					Property prop = model.createProperty(NS
 							+ NamingUtil.createPropertyName(dtpprefix, node.getLocalName()));
@@ -248,13 +261,28 @@ public class XML2OWLMapper {
 							.getResource().getURI());
 					subject.addLiteral(prop, value);
 				}
+
+				try {
+					traverseAttributes(node, object, objectType.getResource());
+				} catch (RuntimeException e) {
+					throw new RuntimeException("Failed to traverse attributes of: " + toS(node), e);
+				}
+
+				if (object != null) {
+					NodeList list = node.getChildNodes();
+					for (int i = 0, length = list.getLength(); i < length; i++) {
+						Node item = list.item(i);
+						try {
+							traverseChildren(item, object, objectType.getResource());
+						} catch (RuntimeException e) {
+							throw new RuntimeException("Failed to traverseChildren: " + toS(item), e);
+						}
+					}
+				}
 			}
-
-			traverseAttributes(node, object, objectType.getResource());
-
 		}
 		// This case is only valid for instances of mixed classes
-		else if (node.getNodeType() == Node.TEXT_NODE) {
+		else if (nodeType == Node.TEXT_NODE) {
 			if (node.getNodeValue().trim().equals(""))
 				return;
 
@@ -271,16 +299,56 @@ public class XML2OWLMapper {
 			Property hasTextContent = model.createProperty(NS
 					+ NamingUtil.createPropertyName(dtpprefix, Constants.MIXED_CLASS_DEFAULT_PROP_NAME));
 			subject.addProperty(hasTextContent, node.getNodeValue().trim(), XSDDatatype.XSDstring);
-
+		} else {
+			// LOGGER.info("Unhandled node type ({}): {}", nodeType, toS(node));
 		}
+	}
 
-		if (object != null) {
-			NodeList list = node.getChildNodes();
-			for (int i = 0, length = list.getLength(); i < length; i++) {
-				traverseChildren(list.item(i), object, objectType.getResource());
+	private Resource traverseChildrenNotDatatype(Node node, Resource subject, final TypedResource objectType) {
+		Resource object;
+		object = model.createResource(baseURI + Constants.ONTMALIZER_INSTANCE_NAME_PREFIX + no + "_"
+				+ objectType.getResource().getLocalName() + "_" + count.get(objectType.getResource().getURI()),
+				objectType.getResource());
+		count.put(objectType.getResource().getURI(), count.get(objectType.getResource().getURI()) + 1);
+
+		Property prop = model.createProperty(NS + NamingUtil.createPropertyName(opprefix, node.getLocalName()));
+
+		subject.addProperty(prop, object);
+		return object;
+	}
+
+	private TypedResource findObjectType(Resource resource, Node node) {
+		final TypedResource xsiOverriddenType = xsiType(node);
+		if (xsiOverriddenType == null) {
+			return findObjectType(resource, node.getLocalName());
+		} else {
+			return xsiOverriddenType;
+		}
+	}
+
+	/**
+	 * The type of the element might be overridden with the use of xsi:type, if
+	 * the original type of the element is abstract, or a superclass. Therefore,
+	 * we have to be sure about the actual type.
+	 */
+	private TypedResource xsiType(Node node) {
+		Element element = (Element) node;
+		String overriddenXsiType = element.getAttributeNS(Constants.XSI_NS, "type");
+		if (overriddenXsiType != null && !overriddenXsiType.equals("")) {
+			String overriddenNS = null;
+			String overriddenType = null;
+			if (overriddenXsiType.contains(":")) {
+				String[] strarr = overriddenXsiType.split(":");
+				String prefix = strarr[0];
+				overriddenType = strarr[1];
+				overriddenNS = document.lookupNamespaceURI(prefix) + "#";
+			} else {
+				overriddenType = overriddenXsiType;
+				overriddenNS = NS;
 			}
+			return findResourceType(overriddenNS + overriddenType);
 		}
-
+		return null;
 	}
 
 	private TypedResource findObjectType(Resource root, String prop) {
@@ -294,9 +362,9 @@ public class XML2OWLMapper {
 			while (itres.hasNext()) {
 				OntClass rescl = (OntClass) itres.next();
 				if (rescl.isRestriction()) {
-					if (rescl.asRestriction().isAllValuesFromRestriction()) {
-						AllValuesFromRestriction avfres = rescl.asRestriction().asAllValuesFromRestriction();
-						Resource allValuesFrom = avfres.getAllValuesFrom();
+					Restriction asRestriction = rescl.asRestriction();
+					if (asRestriction.isAllValuesFromRestriction()) {
+						AllValuesFromRestriction avfres = asRestriction.asAllValuesFromRestriction();
 						try {
 							/**
 							 * In some cases, a resource can be both an object
@@ -306,29 +374,31 @@ public class XML2OWLMapper {
 							 * RDF type of the AllValuesFrom restriction in this
 							 * case.
 							 */
-							if (avfres.getOnProperty().getLocalName()
-									.equals(NamingUtil.createPropertyName(opprefix, prop))
-									&& opprefix.equals(dtpprefix)
-									&& avfres.getOnProperty().isObjectProperty()
-									&& avfres.getOnProperty().isDatatypeProperty()) {
+							OntProperty ontProperty = avfres.getOnProperty();
+							String ontPropertyLocalName = ontProperty.getLocalName();
+							boolean isDatatypeProperty = ontProperty.isDatatypeProperty();
+							boolean isObjectProperty = ontProperty.isObjectProperty();
+							if (ontPropertyLocalName.equals(NamingUtil.createPropertyName(opprefix, prop))
+									&& opprefix.equals(dtpprefix) && isObjectProperty && isDatatypeProperty) {
 								result.setDatatype(findResourceType(avfres.getAllValuesFrom().getURI()).isDatatype());
 								result.setResource(avfres.getAllValuesFrom());
 								return result;
-							} else if (avfres.getOnProperty().getLocalName()
-									.equals(NamingUtil.createPropertyName(opprefix, prop))
-									&& avfres.getOnProperty().isObjectProperty()) {
+							} else if (ontPropertyLocalName.equals(NamingUtil.createPropertyName(opprefix, prop))
+									&& isObjectProperty) {
 								result.setDatatype(false);
 								result.setResource(avfres.getAllValuesFrom());
 								return result;
-							} else if (avfres.getOnProperty().getLocalName()
-									.equals(NamingUtil.createPropertyName(dtpprefix, prop))
-									&& avfres.getOnProperty().isDatatypeProperty()) {
+							} else if (ontPropertyLocalName.equals(NamingUtil.createPropertyName(dtpprefix, prop))
+									&& isDatatypeProperty) {
 								result.setDatatype(true);
 								result.setResource(avfres.getAllValuesFrom());
 								return result;
 							}
 						} catch (RuntimeException e) {
-							LOGGER.error("Failed to map values from restriction to result: " + avfres, e);
+							throw new RuntimeException("Failed to map values from restriction to result: "
+									+ avfres.getRDFType(), e);
+							// LOGGER.error("Failed to map values from restriction to result: "
+							// + avfres.getRDFType(), e);
 						}
 					}
 				}
@@ -352,7 +422,7 @@ public class XML2OWLMapper {
 
 		if (uri.startsWith(XSDDatatype.XSD)) {
 			result.setDatatype(true);
-			result.setResource(XSDUtil.getXSDResource(uri.substring(uri.lastIndexOf("#"), uri.length())));
+			result.setResource(XSDUtil.getXSDResource(uri.substring(uri.lastIndexOf("#") + 1, uri.length())));
 		} else {
 			OntClass cls = ontology.getOntClass(uri);
 			if (cls != null && cls.getRDFType(true).getURI().equals(Constants.OWL_CLASS_URI)) {
