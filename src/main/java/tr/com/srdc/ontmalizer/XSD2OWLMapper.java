@@ -289,8 +289,8 @@ public class XSD2OWLMapper {
 		XSRestrictionSimpleType restriction = simple.asRestriction();
 
 		XSType base = restriction.getBaseType();
-		String baseNS = base.getTargetNamespace() + "#";
-		String baseURI = getURI(base);
+		final String baseNS = base.getTargetNamespace() + "#";
+		final String baseURI = getURI(base);
 
 		enumClass.addSuperClass(ontology.createClass(Constants.ONTMALIZER_ENUMERATEDVALUE_CLASS_NAME));
 
@@ -508,8 +508,9 @@ public class XSD2OWLMapper {
 	}
 
 	private void convertAttribute(XSAttributeUse attributeUse, OntClass complexClass) {
-		XSAttributeDecl attribute = attributeUse.getDecl();
-		String attributeName = attribute.getName();
+		final XSAttributeDecl attribute = attributeUse.getDecl();
+		final String attributeName = attribute.getName();
+		final String attributeNS = attribute.getTargetNamespace();
 
 		final XSSimpleType attributeType = attribute.getType();
 		final String NS = attributeType.getTargetNamespace();
@@ -517,6 +518,9 @@ public class XSD2OWLMapper {
 		final String URI;
 		if (attributeType.isGlobal()) {
 			URI = getURI(attributeType);
+		} else if (!"".equals(attributeNS)) {
+			URI = attributeNS + "#" + attributeName;
+			LOGGER.info("Attribute {}: {}", URI, toS(attribute));
 		} else {
 			URI = mainURI + "#Class_" + attrLocalSimpleTypeCount + "_" + attributeName;
 		}
@@ -538,9 +542,14 @@ public class XSD2OWLMapper {
 			}
 		}
 
-		// Mustafa: All simple types are datatype properties now!
-		Property prop = ontology.createDatatypeProperty(mainURI + "#"
-				+ NamingUtil.createPropertyName(dtpprefix, attribute.getName()));
+		final Property dataTypeProp;
+		if (!"".equals(attributeNS)) {
+			dataTypeProp = ontology.createDatatypeProperty(attributeNS + "#"
+					+ NamingUtil.createPropertyName(dtpprefix, attributeName));
+		} else {
+			dataTypeProp = ontology.createDatatypeProperty(mainURI + "#"
+					+ NamingUtil.createPropertyName(dtpprefix, attributeName));
+		}
 
 		if (!NS.equals(XSDDatatype.XSD)) {
 			convertSimpleType(attributeType, URI);
@@ -548,24 +557,25 @@ public class XSD2OWLMapper {
 		}
 
 		if (attributeUse.isRequired()) {
-			ontology.createCardinalityRestriction(null, prop, 1).addSubClass(complexClass);
+			ontology.createCardinalityRestriction(null, dataTypeProp, 1).addSubClass(complexClass);
 		} else {
-			ontology.createMaxCardinalityRestriction(null, prop, 1).addSubClass(complexClass);
+			ontology.createMaxCardinalityRestriction(null, dataTypeProp, 1).addSubClass(complexClass);
 		}
 
 		if (NS.equals(XSDDatatype.XSD)) {
 			Resource xsdResourceClass = XSDUtil.getXSDResource(attributeTypeName);
 			try {
-				ontology.createAllValuesFromRestriction(null, prop, xsdResourceClass).addSubClass(complexClass);
+				ontology.createAllValuesFromRestriction(null, dataTypeProp, xsdResourceClass).addSubClass(complexClass);
 			} catch (RuntimeException e) {
-				throw new RuntimeException("Failed ontology.createAllValuesFromRestriction(null, " + prop + ", "
-						+ xsdResourceClass + ") :" + toS(attributeType), e);
+				throw new RuntimeException("Failed ontology.createAllValuesFromRestriction(null, " + dataTypeProp
+						+ ", " + xsdResourceClass + ") :" + toS(attributeType), e);
 			}
 		} else if (ontology.getOntResource(URI + Constants.DATATYPE_SUFFIX) != null)
-			ontology.createAllValuesFromRestriction(null, prop,
+			ontology.createAllValuesFromRestriction(null, dataTypeProp,
 					ontology.getOntResource(URI + Constants.DATATYPE_SUFFIX)).addSubClass(complexClass);
 		else if (ontology.getOntResource(URI) != null) {
-			ontology.createAllValuesFromRestriction(null, prop, ontology.getOntResource(URI)).addSubClass(complexClass);
+			ontology.createAllValuesFromRestriction(null, dataTypeProp, ontology.getOntResource(URI)).addSubClass(
+					complexClass);
 		}
 	}
 
@@ -696,8 +706,9 @@ public class XSD2OWLMapper {
 		OntClass attgClass = ontology.createClass(getURI(attGroup));
 
 		Iterator<? extends XSAttributeUse> attributes = attGroup.iterateAttributeUses();
-		while (attributes.hasNext())
+		while (attributes.hasNext()) {
 			convertAttribute((XSAttributeUse) attributes.next(), attgClass);
+		}
 	}
 
 	private void createDefaultTextPropertyForMixedClasses() {

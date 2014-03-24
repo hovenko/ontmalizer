@@ -195,10 +195,11 @@ public class XML2OWLMapper {
 
 		NamedNodeMap attributes = node.getAttributes();
 		for (int i = 0, length = attributes.getLength(); i < length; i++) {
-			Node attribute = attributes.item(i);
+			final Node attribute = attributes.item(i);
+			final String attributeLocalName = attribute.getLocalName();
 			TypedResource atObjType = null;
 			try {
-				atObjType = findObjectType(subjectType, attribute.getLocalName());
+				atObjType = findObjectType(subjectType, attributeLocalName);
 			} catch (RuntimeException e) {
 				// throw new
 				// RuntimeException("Failed to find object type of attribute: "
@@ -395,10 +396,10 @@ public class XML2OWLMapper {
 								return result;
 							}
 						} catch (RuntimeException e) {
-							throw new RuntimeException("Failed to map values from restriction to result: "
-									+ avfres.getRDFType(), e);
-							// LOGGER.error("Failed to map values from restriction to result: "
+							// throw new
+							// RuntimeException("Failed to map values from restriction to result: "
 							// + avfres.getRDFType(), e);
+							LOGGER.warn("Failed to map values from restriction to result: " + avfres.getRDFType(), e);
 						}
 					}
 				}
